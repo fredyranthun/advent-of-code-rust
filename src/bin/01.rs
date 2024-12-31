@@ -1,27 +1,30 @@
+use std::collections::HashMap;
+
 advent_of_code::solution!(1);
 
 fn parse_input(input: &str) -> (Vec<u64>, Vec<u64>) {
-    let mut first_column: Vec<u64> = Vec::new();
-    let mut second_column: Vec<u64> = Vec::new();
+    let (left, right) = input
+        .lines()
+        .map(|line| {
+            line.split_whitespace()
+                .filter_map(|x| x.parse::<u64>().ok())
+                .collect::<Vec<_>>()
+        })
+        .fold((vec![], vec![]), |(mut left, mut right), line| {
+            left.push(line[0]);
+            right.push(line[1]);
 
-    for line in input.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() == 2 {
-            if let (Ok(num1), Ok(num2)) = (parts[0].parse::<u64>(), parts[1].parse::<u64>()) {
-                first_column.push(num1);
-                second_column.push(num2);
-            }
-        }
-    }
+            (left, right)
+        });
 
-    (first_column, second_column)
+    (left, right)
 }
 
 pub fn part_one(input: &str) -> Option<u64> {
     let (mut first_column, mut second_column) = parse_input(input);
 
-    first_column.sort();
-    second_column.sort();
+    first_column.sort_unstable();
+    second_column.sort_unstable();
 
     let answer = first_column
         .into_iter()
@@ -33,14 +36,15 @@ pub fn part_one(input: &str) -> Option<u64> {
 }
 
 pub fn part_two(input: &str) -> Option<u64> {
-    let (mut first_column, mut second_column) = parse_input(input);
-
-    first_column.sort();
-    second_column.sort();
-
-    let answer = first_column
+    let (first_column, second_column) = parse_input(input);
+    let mut map: HashMap<u64, u64> = HashMap::new();
+    second_column
         .iter()
-        .map(|n| (second_column.iter().filter(|n2| *n2 == n).count() as u64) * n)
+        .for_each(|k| *map.entry(*k).or_insert(0) += 1);
+
+    let answer: u64 = first_column
+        .iter()
+        .map(|k| k * (*map.entry(*k).or_default() as u64))
         .sum();
 
     Some(answer)
