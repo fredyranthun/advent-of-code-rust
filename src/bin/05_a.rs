@@ -1,49 +1,11 @@
-use std::{
-    cmp::Ordering,
-    collections::{HashMap, HashSet},
-    hash::Hash,
-};
+use std::{cmp::Ordering, collections::HashMap};
 
 advent_of_code::solution!(5);
 
 type Update = Vec<u64>;
-type Graph<T> = HashMap<T, HashSet<T>>;
+type PageOrderingRules = HashMap<u64, Vec<u64>>;
 
-pub struct State<T> {
-    depends_on: Graph<T>,
-    dependents: Graph<T>,
-}
-
-pub fn add_edge<T>(graph: &mut Graph<T>, from: T, to: T)
-where
-    T: Eq + Hash + Copy,
-{
-    graph
-        .entry(from)
-        .and_modify(|pointees| {
-            pointees.insert(to);
-        })
-        .or_insert_with(|| {
-            let mut s = HashSet::new();
-            s.insert(to);
-            s
-        });
-}
-
-impl<T> State<T>
-where
-    T: Eq + std::hash::Hash,
-{
-    pub fn get_dependents(self: &Self, dependency: &T) -> Option<&HashSet<T>> {
-        self.dependents.get(dependency)
-    }
-
-    pub fn is_resolved(self: &Self) -> bool {
-        self.depends_on.is_empty()
-    }
-}
-
-fn parse_input(input: &str) -> (Graph<u64>, Vec<Update>) {
+fn parse_input(input: &str) -> (PageOrderingRules, Vec<Update>) {
     let blocks: Vec<&str> = input.split("\n\n").collect();
     assert!(blocks.len() == 2);
 
@@ -56,23 +18,19 @@ fn parse_input(input: &str) -> (Graph<u64>, Vec<Update>) {
         .map(|line| line.split(",").map(|s| s.parse::<u64>().unwrap()).collect())
         .collect();
 
-    let mut graph: Graph<u64> = HashMap::new();
+    let mut rules_map: PageOrderingRules = HashMap::new();
 
     rules.iter().for_each(|rule| {
-        add_edge(&mut graph, rule[0], rule[1]);
+        rules_map.entry(rule[0]).or_insert(vec![]).push(rule[1]);
     });
 
-    (graph, updates)
+    (rules_map, updates)
 }
 
-fn valid_update(update: Update, graph: &Graph<u64>) -> bool {
+fn valid_update(update: Update, rules_map: &PageOrderingRules) -> bool {
     for i in 1..update.len() {
-        if let Some(not_before_values) = graph.get(&update[i]) {
-            if not_before_values
-                .intersection(&update[..i].iter().cloned().collect::<HashSet<_>>())
-                .count()
-                != 0
-            {
+        if let Some(not_before_values) = rules_map.get(&update[i]) {
+            if not_before_values.iter().any(|&v| update[..i].contains(&v)) {
                 return false;
             }
         }
@@ -80,9 +38,9 @@ fn valid_update(update: Update, graph: &Graph<u64>) -> bool {
     true
 }
 
-fn sort_update(mut update: Update, graph: &Graph<u64>) -> Vec<u64> {
+fn sort_update(mut update: Update, rules_map: &PageOrderingRules) -> Vec<u64> {
     update.sort_unstable_by(|a, b| {
-        if let Some(not_before_values) = graph.get(a) {
+        if let Some(not_before_values) = rules_map.get(a) {
             if not_before_values.contains(b) {
                 Ordering::Greater
             } else {
