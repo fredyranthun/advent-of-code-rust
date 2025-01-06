@@ -68,32 +68,31 @@ fn check_results(result: u64, operands: Vec<u64>, operations: Vec<Operation>) ->
     results.contains(&&result)
 }
 
+fn sum_valid_results(functions: HashMap<u64, Vec<u64>>, operations: Vec<Operation>) -> u64 {
+    functions
+        .iter()
+        .filter_map(|(result, operands)| {
+            if check_results(*result, operands.clone(), operations.clone()) {
+                Some(result)
+            } else {
+                None
+            }
+        })
+        .sum()
+}
+
 pub fn part_one(input: &str) -> Option<u64> {
     let functions = parse_input(input);
     let operations = vec![Operation::Multiply, Operation::Add];
-    let mut total = 0;
 
-    for (result, operands) in functions {
-        if check_results(result, operands, operations.clone()) {
-            total += result
-        }
-    }
-
-    Some(total)
+    Some(sum_valid_results(functions, operations))
 }
 
 pub fn part_two(input: &str) -> Option<u64> {
     let functions = parse_input(input);
     let operations = vec![Operation::Multiply, Operation::Add, Operation::Concatenate];
-    let mut total = 0;
 
-    for (result, operands) in functions {
-        if check_results(result, operands, operations.clone()) {
-            total += result
-        }
-    }
-
-    Some(total)
+    Some(sum_valid_results(functions, operations))
 }
 
 #[cfg(test)]
