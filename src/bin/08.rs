@@ -33,6 +33,23 @@ impl Grid {
     fn height(&self) -> usize {
         self.positions.len()
     }
+
+    fn get_antennas(&self) -> HashMap<char, Vec<Point>> {
+        let mut antennas: HashMap<char, Vec<Point>> = HashMap::new();
+
+        for (y, row) in self.positions.iter().enumerate() {
+            for (x, ch) in row.iter().enumerate() {
+                if *ch != '.' {
+                    antennas
+                        .entry(*ch)
+                        .or_insert(vec![])
+                        .push(Point(x as isize, y as isize));
+                }
+            }
+        }
+
+        antennas
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -98,20 +115,8 @@ pub fn part_one(input: &str) -> Option<u64> {
     let grid = Grid::from_str(input).unwrap();
     let width = grid.width();
     let height = grid.height();
-    let mut antennas: HashMap<char, Vec<Point>> = HashMap::new();
+    let antennas = grid.get_antennas();
     let mut antinodes: HashSet<_> = HashSet::new();
-
-    // obtain antennas positions
-    for (y, row) in grid.positions.iter().enumerate() {
-        for (x, ch) in row.iter().enumerate() {
-            if *ch != '.' {
-                antennas
-                    .entry(*ch)
-                    .or_insert(vec![])
-                    .push(Point(x as isize, y as isize));
-            }
-        }
-    }
 
     // generate the antinodes and save them in a set
     for (_, points) in antennas {
@@ -136,20 +141,8 @@ pub fn part_two(input: &str) -> Option<u64> {
     let grid = Grid::from_str(input).unwrap();
     let width = grid.width();
     let height = grid.height();
-    let mut antennas: HashMap<char, Vec<Point>> = HashMap::new();
+    let antennas = grid.get_antennas();
     let mut antinodes: HashSet<_> = HashSet::new();
-
-    // obtain antennas positions
-    for (y, row) in grid.positions.iter().enumerate() {
-        for (x, ch) in row.iter().enumerate() {
-            if *ch != '.' {
-                antennas
-                    .entry(*ch)
-                    .or_insert(vec![])
-                    .push(Point(x as isize, y as isize));
-            }
-        }
-    }
 
     // generate the antinodes and save them in a set
     for (_, points) in antennas {
