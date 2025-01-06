@@ -1,8 +1,11 @@
-use std::str::FromStr;
-
+use rayon::prelude::*;
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+};
 advent_of_code::solution!(6);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Direction {
     Up,
     Down,
@@ -10,18 +13,14 @@ enum Direction {
     Right,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 enum Block {
-    NotVisited,
-    Visited,
+    Empty,
     Obstacle,
-    GuardFacingUp,
-    GuardFacingDown,
-    GuardFacingRight,
-    GuardFacingLeft,
+    Guard,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Grid {
     positions: Vec<Vec<Block>>,
 }
@@ -37,8 +36,8 @@ impl FromStr for Grid {
                 l.chars()
                     .map(|c| match c {
                         '#' => Block::Obstacle,
-                        '^' => Block::GuardFacingUp,
-                        _ => Block::NotVisited,
+                        '^' => Block::Guard,
+                        _ => Block::Empty,
                     })
                     .collect()
             })
@@ -52,12 +51,88 @@ impl Grid {
     fn find_guard(&self) -> Option<Point> {
         for (row_idx, row) in self.positions.iter().enumerate() {
             for (col_idx, block) in row.iter().enumerate() {
-                if *block == Block::GuardFacingUp {
+                if *block == Block::Guard {
                     return Some(Point(col_idx, row_idx));
                 }
             }
         }
         None
+    }
+
+    fn generate_new_with_obstacle(&self, point: Point) -> Self {
+        let mut new_grid = self.clone();
+        new_grid.set_block(&point, Block::Obstacle);
+
+        new_grid
+    }
+
+    fn get_visited(&self) -> HashSet<Point> {
+        let mut guard_position = self.find_guard().unwrap();
+        let mut visited: HashSet<Point> = HashSet::new();
+
+        let directions = vec![
+            Direction::Up,
+            Direction::Right,
+            Direction::Down,
+            Direction::Left,
+        ];
+
+        let mut direction_iter = directions.iter().cycle();
+
+        loop {
+            if let Some(&direction) = direction_iter.next() {
+                let (pts, left_grid) =
+                    self.move_guard_dir_until_obstacle(&guard_position, direction);
+                let pts_set: HashSet<Point> = pts.iter().cloned().collect();
+                visited = visited.union(&pts_set).cloned().collect();
+                if left_grid {
+                    break;
+                }
+                guard_position = pts.last().cloned().unwrap();
+            }
+        }
+
+        visited
+    }
+
+    fn get_visited_except_guard_position(&self) -> HashSet<Point> {
+        let g = self.find_guard().unwrap();
+        let mut visited = self.get_visited();
+        visited.remove(&g);
+        visited
+    }
+
+    fn get_caught_in_a_loop(&self) -> bool {
+        let mut guard_position = self.find_guard().unwrap();
+        let mut visited: HashMap<Point, Vec<Direction>> = HashMap::new();
+
+        let directions = vec![
+            Direction::Up,
+            Direction::Right,
+            Direction::Down,
+            Direction::Left,
+        ];
+
+        let mut direction_iter = directions.iter().cycle();
+
+        loop {
+            if let Some(&direction) = direction_iter.next() {
+                let (pts, left_grid) =
+                    self.move_guard_dir_until_obstacle(&guard_position, direction);
+                for pt in &pts {
+                    let pt_visited = visited.entry(*pt).or_insert(vec![]);
+                    if pt_visited.contains(&direction) {
+                        return true;
+                    } else {
+                        pt_visited.push(direction);
+                    }
+                }
+                if left_grid {
+                    return false;
+                }
+                guard_position = pts.clone().last().cloned().unwrap();
+            }
+        }
     }
 
     fn get_block(&self, point: &Point) -> &Block {
@@ -68,78 +143,48 @@ impl Grid {
         self.positions[point.1][point.0] = block;
     }
 
-    fn move_guard_dir(&mut self, point: &Point, direction: Direction) -> Option<Point> {
-        let (next_point, obstacle_block, visited_block, guard_block) = match direction {
-            Direction::Up => (
-                point.up(self),
-                Block::GuardFacingRight,
-                Block::GuardFacingUp,
-                point.up(self),
-            ),
-            Direction::Down => (
-                point.down(self),
-                Block::GuardFacingLeft,
-                Block::GuardFacingDown,
-                point.down(self),
-            ),
-            Direction::Left => (
-                point.left(self),
-                Block::GuardFacingUp,
-                Block::GuardFacingLeft,
-                point.left(self),
-            ),
-            Direction::Right => (
-                point.right(self),
-                Block::GuardFacingDown,
-                Block::GuardFacingRight,
-                point.right(self),
-            ),
-        };
+    fn move_guard_dir_until_obstacle(
+        &self,
+        point: &Point,
+        direction: Direction,
+    ) -> (Vec<Point>, bool) {
+        let mut visited_points = vec![];
+        let mut left_grid = false;
+        let mut curr_point = point.clone();
+        let mut found_obstacle = false;
 
-        if let Some(pt) = next_point {
-            if self.get_block(&pt) == &Block::Obstacle {
-                self.set_block(point, obstacle_block);
-                Some(Point(point.0, point.1))
-            } else {
-                self.set_block(point, Block::Visited);
-                self.set_block(&pt, visited_block);
-                guard_block
-            }
-        } else {
-            None
-        }
-    }
-
-    fn move_guard(&mut self, point: Point) -> Option<Point> {
-        let guard = self.get_block(&point);
-        match guard {
-            Block::GuardFacingUp => self.move_guard_dir(&point, Direction::Up),
-            Block::GuardFacingDown => self.move_guard_dir(&point, Direction::Down),
-            Block::GuardFacingLeft => self.move_guard_dir(&point, Direction::Left),
-            Block::GuardFacingRight => self.move_guard_dir(&point, Direction::Right),
-            _ => None,
-        }
-    }
-
-    fn count_visited(&self) -> u64 {
-        let mut count = 0;
-        for row in self.positions.iter() {
-            for block in row.iter() {
-                if *block == Block::Visited {
-                    count += 1;
+        while !left_grid && !found_obstacle {
+            if let Some(pt) = curr_point.muv(self, &direction) {
+                if self.get_block(&pt) == &Block::Obstacle {
+                    found_obstacle = true;
+                    visited_points.push(curr_point.clone());
+                } else {
+                    visited_points.push(curr_point.clone());
+                    curr_point = pt.clone();
                 }
+            } else {
+                left_grid = true;
+                visited_points.push(curr_point.clone());
             }
         }
 
-        // Consider the guard position
-        count + 1
+        (visited_points, left_grid)
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct Point(usize, usize);
 
 impl Point {
+    fn muv(&self, grid: &Grid, direction: &Direction) -> Option<Point> {
+        match direction {
+            Direction::Up => self.up(grid),
+            Direction::Down => self.down(grid),
+            Direction::Right => self.right(grid),
+            Direction::Left => self.left(grid),
+        }
+    }
+
     fn up(&self, _grid: &Grid) -> Option<Point> {
         if self.1 == 0 {
             None
@@ -174,18 +219,26 @@ impl Point {
 }
 
 pub fn part_one(input: &str) -> Option<u64> {
-    let mut grid = Grid::from_str(input).unwrap();
-    let mut guard_position = grid.find_guard();
-
-    while let Some(pt) = guard_position {
-        guard_position = grid.move_guard(pt);
-    }
-
-    Some(grid.count_visited())
+    let grid = Grid::from_str(input).unwrap();
+    Some(grid.get_visited().len() as u64)
 }
 
 pub fn part_two(input: &str) -> Option<u64> {
-    None
+    let grid = Grid::from_str(input).unwrap();
+    let visited: Vec<Point> = grid
+        .get_visited_except_guard_position()
+        .into_iter()
+        .collect();
+
+    let count = visited
+        .par_iter()
+        .filter(|pt| {
+            let new_grid = grid.generate_new_with_obstacle(**pt);
+            new_grid.get_caught_in_a_loop()
+        })
+        .count();
+
+    Some(count as u64)
 }
 
 #[cfg(test)]
@@ -201,6 +254,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(6));
     }
 }
